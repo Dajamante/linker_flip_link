@@ -9,8 +9,16 @@ struct Token {
 #[derive(Debug, PartialEq)]
 enum TokenType {
     Plus,
+    Colon,
+    CurlyClose,
+    CurlyOpen,
+    Equal,
     Number(u64),
     Word(String),
+    Comma,
+    Dot,
+    ParClose,
+    ParOpen,
 }
 fn lex(script: &str) -> Vec<Token> {
     let mut vec_tokens = Vec::new();
@@ -22,6 +30,38 @@ fn lex(script: &str) -> Vec<Token> {
     while let Some((ind, ch)) = it.next() {
         println!("this is ch: {}", ch);
         match ch {
+            ':' => vec_tokens.push(Token {
+                line_number,
+                token_type: TokenType::Colon,
+            }),
+            ',' => vec_tokens.push(Token {
+                line_number,
+                token_type: TokenType::Comma,
+            }),
+            '{' => vec_tokens.push(Token {
+                line_number,
+                token_type: TokenType::CurlyOpen,
+            }),
+            '}' => vec_tokens.push(Token {
+                line_number,
+                token_type: TokenType::CurlyClose,
+            }),
+            '=' => vec_tokens.push(Token {
+                line_number,
+                token_type: TokenType::Equal,
+            }),
+            '(' => vec_tokens.push(Token {
+                line_number,
+                token_type: TokenType::ParOpen,
+            }),
+            ')' => vec_tokens.push(Token {
+                line_number,
+                token_type: TokenType::ParClose,
+            }),
+            '.' => vec_tokens.push(Token {
+                line_number,
+                token_type: TokenType::Dot,
+            }),
             ' ' | '\t' | '\r' => {}
             '\n' => {
                 println!("This is a new line: {}", ch);
@@ -64,16 +104,17 @@ fn lex(script: &str) -> Vec<Token> {
                     10
                 };
 
-                // we need to know how long the number is
-                // that returns the position of the first non-hex-digit char in the input
-                let stop = it
-                    .by_ref()
-                    .inspect(|(ind, ch)| println!("about to take_while: {}, on index {}", ch, ind))
-                    .find(|(_, ch)| !ch.is_ascii_hexdigit())
-                    .map(|(idx, _)| idx)
-                    .unwrap_or(script.len());
+                let stop = loop {
+                    let &(idx, ch) = match it.peek() {
+                        Some(it) => it,
+                        None => break script.len(),
+                    };
+                    if !ch.is_ascii_hexdigit() {
+                        break idx;
+                    };
+                    it.next();
+                };
 
-                println!("radix: {}", radix);
                 let number = u64::from_str_radix(&script[start..stop], radix).unwrap();
 
                 vec_tokens.push(Token {
@@ -82,19 +123,23 @@ fn lex(script: &str) -> Vec<Token> {
                 });
             }
             'a'..='z' | 'A'..='Z' => {
-                println!("char in 'a'..='z' | 'A'..='Z': {}", ch);
-                let mut string = String::new();
-                string.push(ch);
+                let start = ind;
 
-                it.by_ref()
-                    .take_while(|(_, c)| c.is_alphabetic())
-                    .for_each(|(_, c)| string.push(c));
+                let stop = loop {
+                    let &(ind, ch) = match it.peek() {
+                        Some(it) => it,
+                        None => break script.len(),
+                    };
 
-                println!("string in 'a'..='z' {}", string);
+                    if !ch.is_alphabetic() {
+                        break ind;
+                    }
+                    it.next();
+                };
 
                 vec_tokens.push(Token {
                     line_number,
-                    token_type: TokenType::Word(string),
+                    token_type: TokenType::Word(script[start..stop].to_string()),
                 })
             }
             _ => {
@@ -240,6 +285,135 @@ Very unclear comment
 */
 0";
         assert_eq!(lex(test_new_lines), vec![create_token_number(4, 0)]);
+    }
+
+    #[test]
+    fn lex_4_5() {
+        assert_eq!(lex("/**/"), Vec::new());
+    }
+    #[test]
+    fn lex_4_6() {
+        assert_eq!(lex("//"), Vec::new());
+    }
+
+    #[test]
+    fn lex_5() {
+        let number_and_unit = "256K";
+        assert_eq!(
+            lex(number_and_unit),
+            vec![create_token_number(0, 256), create_token_word(0, "K")]
+        );
+    }
+
+    #[test]
+    fn lex_6_1() {
+        let number_and_unit = "256, 368";
+        assert_eq!(
+            lex(number_and_unit),
+            vec![
+                create_token_number(0, 256),
+                Token {
+                    line_number: 0,
+                    token_type: TokenType::Comma
+                },
+                create_token_number(0, 368)
+            ]
+        );
+    }
+
+    #[test]
+    fn lex_6_2() {
+        let number_and_unit = "
+256
+,
+368";
+        assert_eq!(
+            lex(number_and_unit),
+            vec![
+                create_token_number(1, 256),
+                Token {
+                    line_number: 2,
+                    token_type: TokenType::Comma
+                },
+                create_token_number(3, 368)
+            ]
+        );
+    }
+
+    #[test]
+    fn lex_7_1_1() {
+        const LINKER_SCRIPT: &str = "MEMORY
+        PROBLEMS
+";
+
+        let expected = vec![
+            create_token_word(0, "MEMORY"),
+            create_token_word(1, "PROBLEMS"),
+        ];
+        assert_eq!(lex(LINKER_SCRIPT), expected);
+    }
+    #[test]
+    fn lex_7_1() {
+        const LINKER_SCRIPT: &str = "MEMORY
+        {
+          FLASH : ORIGIN = 0x00000000, LENGTH = 256K
+        }
+        ";
+
+        let expected = vec![
+            create_token_word(0, "MEMORY"),
+            Token {
+                line_number: 1,
+                token_type: TokenType::CurlyOpen,
+            },
+            create_token_word(2, "FLASH"),
+            Token {
+                line_number: 2,
+                token_type: TokenType::Colon,
+            },
+            create_token_word(2, "ORIGIN"),
+            Token {
+                line_number: 2,
+                token_type: TokenType::Equal,
+            },
+            create_token_number(2, 0),
+            Token {
+                line_number: 2,
+                token_type: TokenType::Comma,
+            },
+            create_token_word(2, "LENGTH"),
+            Token {
+                line_number: 2,
+                token_type: TokenType::Equal,
+            },
+            create_token_number(2, 256),
+            create_token_word(2, "K"),
+            Token {
+                line_number: 3,
+                token_type: TokenType::CurlyClose,
+            },
+        ];
+
+        assert_eq!(lex(LINKER_SCRIPT), expected);
+    }
+
+    #[test]
+    fn lex_7_2() {
+        const LINKER_SCRIPT: &str = "MEMORY
+        LINKER.x
+        ";
+
+        let expected = vec![
+            create_token_word(0, "MEMORY"),
+            create_token_word(1, "LINKER"),
+            Token {
+                line_number: 1,
+                token_type: TokenType::Dot,
+            },
+            create_token_word(1, "x"),
+        ];
+
+        assert_eq!(lex(LINKER_SCRIPT), expected);
     }
 }
 

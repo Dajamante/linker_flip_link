@@ -20,15 +20,33 @@ fn lex(script: &str) -> Vec<Token> {
     //let mut it = script.chars().peekable();
     let mut it = script.chars().enumerate().peekable();
     while let Some((ind, ch)) = it.next() {
+        println!("this is ch: {}", ch);
         match ch {
-            // all whitespace istället
-            ' ' | '\t' | '\r' => {
-                println!("ind is at {}", ind);
-                continue;
-            }
+            ' ' | '\t' | '\r' => {}
             '\n' => {
+                println!("This is a new line: {}", ch);
                 line_number += 1;
-                continue;
+            }
+            '/' => {
+                // block comment
+                if let Some((_, '*')) = it.peek() {
+                    let stop = script[ind..].find("*/").unwrap_or(script.len());
+                    for b in script[ind..stop].chars() {
+                        if b == '\n' {
+                            line_number += 1;
+                        }
+                        it.next();
+                    }
+                    // after stop there should be a new line
+                    line_number += 1;
+                }
+
+                // line comment
+                if let Some((_, '/')) = it.peek() {
+                    // must iterate until /n and increment line_number
+                    it.by_ref().find(|(_, ch)| *ch == '\n');
+                    line_number += 1;
+                }
             }
             '+' => vec_tokens.push(Token {
                 line_number,
@@ -36,7 +54,6 @@ fn lex(script: &str) -> Vec<Token> {
             }),
             // Assuming that hex number always start with a 0, and not an "x".
             '0'..='9' => {
-                println!("start index {}", ind);
                 let mut start = ind;
                 let radix = if let Some((_, 'x')) = it.peek() {
                     // Skip the "x"
@@ -52,11 +69,9 @@ fn lex(script: &str) -> Vec<Token> {
                 let stop = it
                     .by_ref()
                     .inspect(|(ind, ch)| println!("about to take_while: {}, on index {}", ch, ind))
-                    //.take_while(|(_, ch)| ch.is_ascii_hexdigit())
                     .find(|(_, ch)| !ch.is_ascii_hexdigit())
                     .map(|(idx, _)| idx)
                     .unwrap_or(script.len());
-                //.count();
 
                 println!("radix: {}", radix);
                 let number = u64::from_str_radix(&script[start..stop], radix).unwrap();
@@ -67,7 +82,7 @@ fn lex(script: &str) -> Vec<Token> {
                 });
             }
             'a'..='z' | 'A'..='Z' => {
-                println!("{}", ch);
+                println!("char in 'a'..='z' | 'A'..='Z': {}", ch);
                 let mut string = String::new();
                 string.push(ch);
 
@@ -75,7 +90,7 @@ fn lex(script: &str) -> Vec<Token> {
                     .take_while(|(_, c)| c.is_alphabetic())
                     .for_each(|(_, c)| string.push(c));
 
-                println!("{}", string);
+                println!("string in 'a'..='z' {}", string);
 
                 vec_tokens.push(Token {
                     line_number,
@@ -183,20 +198,48 @@ mod tests {
     #[test]
     fn lex_3() {
         let three_elems: Vec<Token> = vec![
-            Token {
-                line_number: 0,
-                token_type: TokenType::Word("nx".to_string()),
-            },
-            Token {
-                line_number: 0,
-                token_type: TokenType::Word("nx".to_string()),
-            },
-            Token {
-                line_number: 0,
-                token_type: TokenType::Number(1),
-            },
+            create_token_word(0, "nx"),
+            create_token_word(0, "nx"),
+            create_token_number(0, 1),
         ];
+
         assert_eq!(lex("nx nx 0x1"), three_elems);
+    }
+
+    #[test]
+    fn lex_4_1() {
+        let test_new_lines = "
+//
+0";
+        assert_eq!(lex(test_new_lines), vec![create_token_number(2, 0)]);
+    }
+
+    #[test]
+    fn lex_4_2() {
+        let test_new_lines = "
+// some comment
+0";
+        assert_eq!(lex(test_new_lines), vec![create_token_number(2, 0)]);
+    }
+
+    #[test]
+    fn lex_4_3() {
+        let test_new_lines = "
+// some comment
+0
+// some comment
+// more comment";
+        assert_eq!(lex(test_new_lines), vec![create_token_number(2, 0)]);
+    }
+
+    #[test]
+    fn lex_4_4() {
+        let test_new_lines = "
+/*
+Very unclear comment
+*/
+0";
+        assert_eq!(lex(test_new_lines), vec![create_token_number(4, 0)]);
     }
 }
 
@@ -204,5 +247,12 @@ fn create_token_number(line: usize, number: u64) -> Token {
     Token {
         line_number: line,
         token_type: TokenType::Number(number),
+    }
+}
+
+fn create_token_word(line: usize, string: &str) -> Token {
+    Token {
+        line_number: line,
+        token_type: TokenType::Word(string.to_string()),
     }
 }

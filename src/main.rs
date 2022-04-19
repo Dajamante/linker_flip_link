@@ -1,6 +1,8 @@
-fn main() {
-    println!("Hello, world!");
-}
+use std::iter::{Enumerate, Peekable};
+use std::str::Chars;
+
+fn main() {}
+
 #[derive(Debug, PartialEq)]
 struct Token {
     line_number: usize,
@@ -103,17 +105,8 @@ fn lex(script: &str) -> Vec<Token> {
                 } else {
                     10
                 };
-
-                let stop = loop {
-                    let &(idx, ch) = match it.peek() {
-                        Some(it) => it,
-                        None => break script.len(),
-                    };
-                    if !ch.is_ascii_hexdigit() {
-                        break idx;
-                    };
-                    it.next();
-                };
+                let stop = advance_while(it.by_ref(), |c: &char| !c.is_ascii_hexdigit())
+                    .unwrap_or(script.len());
 
                 let number = u64::from_str_radix(&script[start..stop], radix).unwrap();
 
@@ -149,6 +142,23 @@ fn lex(script: &str) -> Vec<Token> {
     }
 
     vec_tokens
+}
+
+fn advance_while(
+    it: &mut Peekable<Enumerate<Chars<'_>>>,
+    pred: fn(&char) -> bool,
+) -> Option<usize> {
+    let stop = loop {
+        let &(idx, ch) = match it.peek() {
+            Some(it) => it,
+            None => return None,
+        };
+        if pred(&ch) {
+            break idx;
+        }
+        it.next();
+    };
+    Some(stop)
 }
 
 #[cfg(test)]

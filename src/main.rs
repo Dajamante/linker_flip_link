@@ -5,6 +5,7 @@ use std::str::Chars;
 
 fn main() {}
 
+// TODO: starting and stopping positions
 #[derive(Debug, PartialEq)]
 struct Token {
     line_number: usize,
@@ -24,75 +25,79 @@ enum TokenType {
     ParClose,
     ParOpen,
 }
-fn lexer(script: &str) -> Vec<Token> {
-    let mut vec_tokens = Vec::new();
 
+fn lexer(script: &str) -> Vec<Token> {
+    let mut tokens = Vec::new();
+
+    // atm flip-link is using a line number to write
+    // back to the original linker script.
     let mut line_number = 0;
 
-    //let mut it = script.chars().peekable();
     let mut it = script.chars().enumerate().peekable();
-    while let Some((ind, ch)) = it.next() {
-        println!("this is ch: {}", ch);
+    while let Some((index, ch)) = it.next() {
         match ch {
-            ':' => vec_tokens.push(Token {
+            ':' => tokens.push(Token {
                 line_number,
                 token_type: TokenType::Colon,
             }),
-            ',' => vec_tokens.push(Token {
+            ',' => tokens.push(Token {
                 line_number,
                 token_type: TokenType::Comma,
             }),
-            '{' => vec_tokens.push(Token {
+            '{' => tokens.push(Token {
                 line_number,
                 token_type: TokenType::CurlyOpen,
             }),
-            '}' => vec_tokens.push(Token {
+            '}' => tokens.push(Token {
                 line_number,
                 token_type: TokenType::CurlyClose,
             }),
-            '=' => vec_tokens.push(Token {
+            '=' => tokens.push(Token {
                 line_number,
                 token_type: TokenType::Equal,
             }),
-            '(' => vec_tokens.push(Token {
+            '(' => tokens.push(Token {
                 line_number,
                 token_type: TokenType::ParOpen,
             }),
-            ')' => vec_tokens.push(Token {
+            ')' => tokens.push(Token {
                 line_number,
                 token_type: TokenType::ParClose,
             }),
-            '.' => vec_tokens.push(Token {
+            '.' => tokens.push(Token {
                 line_number,
                 token_type: TokenType::Dot,
             }),
-            ' ' | '\t' | '\r' => {}
+            ' ' | '\t' | '\r' => {
+                // nothing to do with whitespaces atm
+                // if we implement start and stop positions
+                // we will need to increment  in that block
+            }
             '\n' => {
                 line_number += 1;
             }
             '/' => {
                 // Multiblock comment
                 if let Some((_, '*')) = it.peek() {
-                    let _next_star = advance_while(&mut it, |c| *c == '*');
+                    // eating the '*' character
+                    let _ = advance_while(&mut it, |c| *c == '*');
                     let stop = advance_while(&mut it, |c| *c == '/').unwrap_or(script.len());
-                    // A multiblock comment will have several new lines
-                    // Not the beautifulest but we can add it as an optional argument
-                    // in the advance_while() function
-                    line_number += script[ind..stop].chars().filter(|c| *c == '\n').count();
+                    // Findex all new lines in the multiline comment
+                    line_number += script[index..stop].chars().filter(|c| *c == '\n').count();
                 }
-                // line comment
+                // One line comment
                 if let Some((_, '/')) = it.peek() {
-                    // must iterate until /n
+                    // must iterate until /n (end of line)
                     let _ = advance_while(&mut it, |ch| *ch == '\n');
                 }
             }
-            '+' => vec_tokens.push(Token {
+            '+' => tokens.push(Token {
                 line_number,
                 token_type: TokenType::Plus,
             }),
             // Assuming that hex number always start with a 0, and not an "x"!
             '0'..='9' => {
-                let mut start = ind;
+                let mut start = index;
                 let radix = if let Some((_, 'x')) = it.peek() {
                     // Consumme the "x"
                     it.next();
@@ -105,33 +110,35 @@ fn lexer(script: &str) -> Vec<Token> {
                 let stop = advance_while(it.by_ref(), |c: &char| !c.is_ascii_hexdigit())
                     .unwrap_or(script.len());
 
+                // Tighten up error management at this stage, or by the parser? What about negative numbers etc.
                 let number = u64::from_str_radix(&script[start..stop], radix).unwrap();
 
-                vec_tokens.push(Token {
+                tokens.push(Token {
                     line_number,
                     token_type: TokenType::Number(number),
                 });
             }
             'a'..='z' | 'A'..='Z' => {
-                let start = ind;
-
                 let stop = advance_while(it.by_ref(), |c: &char| !c.is_alphabetic())
                     .unwrap_or(script.len());
 
-                vec_tokens.push(Token {
+                tokens.push(Token {
                     line_number,
-                    token_type: TokenType::Word(script[start..stop].to_string()),
+                    token_type: TokenType::Word(script[index..stop].to_string()),
                 })
             }
+            // to be decided: substraction? division? multiplication ..?
             _ => {
                 continue;
             }
         }
     }
 
-    vec_tokens
+    tokens
 }
 
+/// This function advances in the script until it hits a
+/// predicate, and returns the index.
 fn advance_while(
     it: &mut Peekable<Enumerate<Chars<'_>>>,
     pred: fn(&char) -> bool,

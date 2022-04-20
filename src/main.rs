@@ -35,39 +35,21 @@ fn lexer(script: &str) -> Vec<Token> {
 
     let mut it = script.chars().enumerate().peekable();
     while let Some((index, ch)) = it.next() {
+        let mut push = |token_type| {
+            tokens.push(Token {
+                line_number,
+                token_type,
+            })
+        };
         match ch {
-            ':' => tokens.push(Token {
-                line_number,
-                token_type: TokenType::Colon,
-            }),
-            ',' => tokens.push(Token {
-                line_number,
-                token_type: TokenType::Comma,
-            }),
-            '{' => tokens.push(Token {
-                line_number,
-                token_type: TokenType::CurlyOpen,
-            }),
-            '}' => tokens.push(Token {
-                line_number,
-                token_type: TokenType::CurlyClose,
-            }),
-            '=' => tokens.push(Token {
-                line_number,
-                token_type: TokenType::Equal,
-            }),
-            '(' => tokens.push(Token {
-                line_number,
-                token_type: TokenType::ParOpen,
-            }),
-            ')' => tokens.push(Token {
-                line_number,
-                token_type: TokenType::ParClose,
-            }),
-            '.' => tokens.push(Token {
-                line_number,
-                token_type: TokenType::Dot,
-            }),
+            ':' => push(TokenType::Colon),
+            ',' => push(TokenType::Comma),
+            '{' => push(TokenType::CurlyOpen),
+            '}' => push(TokenType::CurlyClose),
+            '=' => push(TokenType::Equal),
+            '(' => push(TokenType::ParOpen),
+            ')' => push(TokenType::ParClose),
+            '.' => push(TokenType::Dot),
             ' ' | '\t' | '\r' => {
                 // nothing to do with whitespaces atm
                 // if we implement start and stop positions
@@ -91,10 +73,7 @@ fn lexer(script: &str) -> Vec<Token> {
                     let _ = advance_while(&mut it, |ch| *ch == '\n');
                 }
             }
-            '+' => tokens.push(Token {
-                line_number,
-                token_type: TokenType::Plus,
-            }),
+            '+' => push(TokenType::Plus),
             // Assuming that hex number always start with a 0, and not an "x"!
             '0'..='9' => {
                 let mut start = index;
@@ -113,19 +92,13 @@ fn lexer(script: &str) -> Vec<Token> {
                 // Tighten up error management at this stage, or by the parser? What about negative numbers etc.
                 let number = u64::from_str_radix(&script[start..stop], radix).unwrap();
 
-                tokens.push(Token {
-                    line_number,
-                    token_type: TokenType::Number(number),
-                });
+                push(TokenType::Number(number))
             }
             'a'..='z' | 'A'..='Z' => {
                 let stop = advance_while(it.by_ref(), |c: &char| !c.is_alphabetic())
                     .unwrap_or(script.len());
 
-                tokens.push(Token {
-                    line_number,
-                    token_type: TokenType::Word(script[index..stop].to_string()),
-                })
+                push(TokenType::Word(script[index..stop].to_string()))
             }
             // to be decided: substraction? division? multiplication ..?
             _ => {

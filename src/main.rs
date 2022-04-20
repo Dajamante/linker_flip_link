@@ -1,3 +1,5 @@
+//! This lexer is intended to be used with Ferrous Systems flip-link
+
 use std::iter::{Enumerate, Peekable};
 use std::str::Chars;
 
@@ -22,7 +24,7 @@ enum TokenType {
     ParClose,
     ParOpen,
 }
-fn lex(script: &str) -> Vec<Token> {
+fn lexer(script: &str) -> Vec<Token> {
     let mut vec_tokens = Vec::new();
 
     let mut line_number = 0;
@@ -66,40 +68,35 @@ fn lex(script: &str) -> Vec<Token> {
             }),
             ' ' | '\t' | '\r' => {}
             '\n' => {
-                println!("This is a new line: {}", ch);
                 line_number += 1;
             }
             '/' => {
-                // block comment
+                // Multiblock comment
                 if let Some((_, '*')) = it.peek() {
-                    let stop = script[ind..].find("*/").unwrap_or(script.len());
-                    for b in script[ind..stop].chars() {
-                        if b == '\n' {
-                            line_number += 1;
-                        }
-                        it.next();
-                    }
-                    // after stop there should be a new line
-                    line_number += 1;
+                    let _next_star = advance_while(&mut it, |c| *c == '*');
+                    let stop = advance_while(&mut it, |c| *c == '/').unwrap_or(script.len());
+                    // A multiblock comment will have several new lines
+                    // Not the beautifulest but we can add it as an optional argument
+                    // in the advance_while() function
+                    line_number += script[ind..stop].chars().filter(|c| *c == '\n').count();
                 }
-
                 // line comment
                 if let Some((_, '/')) = it.peek() {
-                    // must iterate until /n and increment line_number
-                    it.by_ref().find(|(_, ch)| *ch == '\n');
-                    line_number += 1;
+                    // must iterate until /n
+                    let _ = advance_while(&mut it, |ch| *ch == '\n');
                 }
             }
             '+' => vec_tokens.push(Token {
                 line_number,
                 token_type: TokenType::Plus,
             }),
-            // Assuming that hex number always start with a 0, and not an "x".
+            // Assuming that hex number always start with a 0, and not an "x"!
             '0'..='9' => {
                 let mut start = ind;
                 let radix = if let Some((_, 'x')) = it.peek() {
-                    // Skip the "x"
+                    // Consumme the "x"
                     it.next();
+                    // the base 16 number starts after "0x"
                     start += 2;
                     16
                 } else {
@@ -118,17 +115,8 @@ fn lex(script: &str) -> Vec<Token> {
             'a'..='z' | 'A'..='Z' => {
                 let start = ind;
 
-                let stop = loop {
-                    let &(ind, ch) = match it.peek() {
-                        Some(it) => it,
-                        None => break script.len(),
-                    };
-
-                    if !ch.is_alphabetic() {
-                        break ind;
-                    }
-                    it.next();
-                };
+                let stop = advance_while(it.by_ref(), |c: &char| !c.is_alphabetic())
+                    .unwrap_or(script.len());
 
                 vec_tokens.push(Token {
                     line_number,
@@ -165,161 +153,161 @@ fn advance_while(
 mod tests {
     use super::*;
     #[test]
-    fn lex_1() {
+    fn lexer_1() {
         let empty: Vec<Token> = Vec::new();
-        assert_eq!(lex(""), empty);
+        assert_eq!(lexer(""), empty);
     }
 
     #[test]
-    fn lex_1_1() {
+    fn lexer_1_1() {
         let empty: Vec<Token> = Vec::new();
-        assert_eq!(lex(" "), empty);
+        assert_eq!(lexer(" "), empty);
     }
 
     #[test]
-    fn lex_1_2() {
+    fn lexer_1_2() {
         let empty: Vec<Token> = Vec::new();
-        assert_eq!(lex("     "), empty);
+        assert_eq!(lexer("     "), empty);
     }
 
     #[test]
-    fn lex_1_2_with_tab() {
+    fn lexer_1_2_with_tab() {
         let empty: Vec<Token> = Vec::new();
-        assert_eq!(lex("    \t "), empty);
+        assert_eq!(lexer("    \t "), empty);
     }
     #[test]
-    fn lex_2_1() {
-        assert_eq!(lex("0"), vec![create_token_number(0, 0)]);
-    }
-
-    #[test]
-    fn lex_2_1_with_space_before() {
-        assert_eq!(lex(" 0"), vec![create_token_number(0, 0)]);
+    fn lexer_2_1() {
+        assert_eq!(lexer("0"), vec![create_token_number(0, 0)]);
     }
 
     #[test]
-    fn lex_2_1_with_space_after() {
-        assert_eq!(lex("0 "), vec![create_token_number(0, 0)]);
-    }
-    #[test]
-    fn lex_2_1_with_space_after_12() {
-        assert_eq!(lex("12 "), vec![create_token_number(0, 12)]);
+    fn lexer_2_1_with_space_before() {
+        assert_eq!(lexer(" 0"), vec![create_token_number(0, 0)]);
     }
 
     #[test]
-    fn lex_2_1_with_space_before_after() {
-        assert_eq!(lex(" 0 "), vec![create_token_number(0, 0)]);
+    fn lexer_2_1_with_space_after() {
+        assert_eq!(lexer("0 "), vec![create_token_number(0, 0)]);
+    }
+    #[test]
+    fn lexer_2_1_with_space_after_12() {
+        assert_eq!(lexer("12 "), vec![create_token_number(0, 12)]);
     }
 
     #[test]
-    fn lex_2_1_with_tabs() {
-        assert_eq!(lex("  \t  0     "), vec![create_token_number(0, 0)]);
+    fn lexer_2_1_with_space_before_after() {
+        assert_eq!(lexer(" 0 "), vec![create_token_number(0, 0)]);
     }
 
     #[test]
-    fn lex_2_2() {
-        assert_eq!(lex("1"), vec![create_token_number(0, 1)]);
+    fn lexer_2_1_with_tabs() {
+        assert_eq!(lexer("  \t  0     "), vec![create_token_number(0, 0)]);
     }
 
     #[test]
-    fn lex_2_3() {
-        assert_eq!(lex("12"), vec![create_token_number(0, 12)]);
+    fn lexer_2_2() {
+        assert_eq!(lexer("1"), vec![create_token_number(0, 1)]);
     }
 
     #[test]
-    fn lex_2_4() {
-        assert_eq!(lex("00000001"), vec![create_token_number(0, 1)]);
+    fn lexer_2_3() {
+        assert_eq!(lexer("12"), vec![create_token_number(0, 12)]);
     }
 
     #[test]
-    fn lex_2_5() {
-        assert_eq!(lex("0x0"), vec![create_token_number(0, 0)]);
+    fn lexer_2_4() {
+        assert_eq!(lexer("00000001"), vec![create_token_number(0, 1)]);
     }
 
     #[test]
-    fn lex_2_6() {
-        assert_eq!(lex("0x1"), vec![create_token_number(0, 1)]);
+    fn lexer_2_5() {
+        assert_eq!(lexer("0x0"), vec![create_token_number(0, 0)]);
     }
 
     #[test]
-    fn lex_2_7() {
-        assert_eq!(lex("0x0017"), vec![create_token_number(0, 0x0017)]);
+    fn lexer_2_6() {
+        assert_eq!(lexer("0x1"), vec![create_token_number(0, 1)]);
     }
 
     #[test]
-    fn lex_2_8() {
-        assert_eq!(lex("0x0Af17"), vec![create_token_number(0, 0xaf17)]);
+    fn lexer_2_7() {
+        assert_eq!(lexer("0x0017"), vec![create_token_number(0, 0x0017)]);
+    }
+
+    #[test]
+    fn lexer_2_8() {
+        assert_eq!(lexer("0x0Af17"), vec![create_token_number(0, 0xaf17)]);
     }
     #[test]
-    fn lex_3() {
+    fn lexer_3() {
         let three_elems: Vec<Token> = vec![
             create_token_word(0, "nx"),
             create_token_word(0, "nx"),
             create_token_number(0, 1),
         ];
 
-        assert_eq!(lex("nx nx 0x1"), three_elems);
+        assert_eq!(lexer("nx nx 0x1"), three_elems);
     }
 
     #[test]
-    fn lex_4_1() {
+    fn lexer_4_1() {
         let test_new_lines = "
 //
 0";
-        assert_eq!(lex(test_new_lines), vec![create_token_number(2, 0)]);
+        assert_eq!(lexer(test_new_lines), vec![create_token_number(2, 0)]);
     }
 
     #[test]
-    fn lex_4_2() {
+    fn lexer_4_2() {
         let test_new_lines = "
 // some comment
 0";
-        assert_eq!(lex(test_new_lines), vec![create_token_number(2, 0)]);
+        assert_eq!(lexer(test_new_lines), vec![create_token_number(2, 0)]);
     }
 
     #[test]
-    fn lex_4_3() {
+    fn lexer_4_3() {
         let test_new_lines = "
 // some comment
 0
 // some comment
 // more comment";
-        assert_eq!(lex(test_new_lines), vec![create_token_number(2, 0)]);
+        assert_eq!(lexer(test_new_lines), vec![create_token_number(2, 0)]);
     }
 
     #[test]
-    fn lex_4_4() {
+    fn lexer_4_4() {
         let test_new_lines = "
 /*
 Very unclear comment
 */
 0";
-        assert_eq!(lex(test_new_lines), vec![create_token_number(4, 0)]);
+        assert_eq!(lexer(test_new_lines), vec![create_token_number(4, 0)]);
     }
 
     #[test]
-    fn lex_4_5() {
-        assert_eq!(lex("/**/"), Vec::new());
+    fn lexer_4_5() {
+        assert_eq!(lexer("/**/"), Vec::new());
     }
     #[test]
-    fn lex_4_6() {
-        assert_eq!(lex("//"), Vec::new());
+    fn lexer_4_6() {
+        assert_eq!(lexer("//"), Vec::new());
     }
 
     #[test]
-    fn lex_5() {
+    fn lexer_5() {
         let number_and_unit = "256K";
         assert_eq!(
-            lex(number_and_unit),
+            lexer(number_and_unit),
             vec![create_token_number(0, 256), create_token_word(0, "K")]
         );
     }
 
     #[test]
-    fn lex_6_1() {
+    fn lexer_6_1() {
         let number_and_unit = "256, 368";
         assert_eq!(
-            lex(number_and_unit),
+            lexer(number_and_unit),
             vec![
                 create_token_number(0, 256),
                 Token {
@@ -332,13 +320,13 @@ Very unclear comment
     }
 
     #[test]
-    fn lex_6_2() {
+    fn lexer_6_2() {
         let number_and_unit = "
 256
 ,
 368";
         assert_eq!(
-            lex(number_and_unit),
+            lexer(number_and_unit),
             vec![
                 create_token_number(1, 256),
                 Token {
@@ -351,7 +339,7 @@ Very unclear comment
     }
 
     #[test]
-    fn lex_7_1_1() {
+    fn lexer_7_1_1() {
         const LINKER_SCRIPT: &str = "MEMORY
         PROBLEMS
 ";
@@ -360,10 +348,10 @@ Very unclear comment
             create_token_word(0, "MEMORY"),
             create_token_word(1, "PROBLEMS"),
         ];
-        assert_eq!(lex(LINKER_SCRIPT), expected);
+        assert_eq!(lexer(LINKER_SCRIPT), expected);
     }
     #[test]
-    fn lex_7_1() {
+    fn lexer_7_1() {
         const LINKER_SCRIPT: &str = "MEMORY
         {
           FLASH : ORIGIN = 0x00000000, LENGTH = 256K
@@ -404,11 +392,11 @@ Very unclear comment
             },
         ];
 
-        assert_eq!(lex(LINKER_SCRIPT), expected);
+        assert_eq!(lexer(LINKER_SCRIPT), expected);
     }
 
     #[test]
-    fn lex_7_2() {
+    fn lexer_7_2() {
         const LINKER_SCRIPT: &str = "MEMORY
         LINKER.x
         ";
@@ -423,20 +411,20 @@ Very unclear comment
             create_token_word(1, "x"),
         ];
 
-        assert_eq!(lex(LINKER_SCRIPT), expected);
+        assert_eq!(lexer(LINKER_SCRIPT), expected);
     }
-}
 
-fn create_token_number(line: usize, number: u64) -> Token {
-    Token {
-        line_number: line,
-        token_type: TokenType::Number(number),
+    fn create_token_number(line: usize, number: u64) -> Token {
+        Token {
+            line_number: line,
+            token_type: TokenType::Number(number),
+        }
     }
-}
 
-fn create_token_word(line: usize, string: &str) -> Token {
-    Token {
-        line_number: line,
-        token_type: TokenType::Word(string.to_string()),
+    fn create_token_word(line: usize, string: &str) -> Token {
+        Token {
+            line_number: line,
+            token_type: TokenType::Word(string.to_string()),
+        }
     }
 }
